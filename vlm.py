@@ -255,10 +255,10 @@ class Cache:
         except (OSError, ValueError):
             return []
 
-    def find(self, source, model, thumb):
+    def find(self, source, model, thumb, version=PROMPT_VERSION):
         best, best_d = None, CACHE_MAX_DIFF
         for e in self._load():
-            if e.get("source") != source or e.get("model") != model or e.get("prompt") != PROMPT_VERSION:
+            if e.get("source") != source or e.get("model") != model or e.get("prompt") != version:
                 continue
             t = np.array(e["thumb"], np.int16)
             if t.shape != thumb.shape:
@@ -329,3 +329,63 @@ def first_guess(rgb, m, use_cache=True, cache=None):
                     cached=False, fallback="; ".join(skipped) or None, depth=depth, image_hash=img_hash)
     return dict(prior, invalid_fields=[], source="depth-only", model=None, latency_s=0.0, model_latency_s=None,
                 cached=False, fallback="; ".join(skipped) or None, depth=depth, image_hash=img_hash)
+
+
+# ---------------------------------------------------------------------------------------- detector (display)
+DETECT_VERSION = "d1"
+DETECT_PROMPT = """You are the object detector of a robot's wrist camera. The image is a crop showing ONE object on \
+a table. The scene is a physics simulation: objects are simple shapes (sphere, ellipsoid, cylinder, box) with \
+realistic colour and size. The depth camera measured: height @H mm, width @W mm, length @L mm, top shape: @SHAPE.
+
+Give the 3 most likely object classes and your probability for each (probabilities sum to at most 1). \
+Reply with JSON only, no other text: {"top3": [{"label": str, "p": number}, {"label": str, "p": number}, \
+{"label": str, "p": number}]}"""
+
+
+def _top3(raw):
+    out = []
+    for it in (raw.get("top3") if isinstance(raw, dict) else None) or []:
+        try:
+            lab, p = str(it["label"]).strip()[:26], _num(it["p"])
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if p > 1.0:                                   # answered in percent
+            p /= 100.0
+        if lab:
+            out.append((lab, float(np.clip(p, 0.0, 1.0))))
+    return sorted(out, key=lambda t: -t[1])[:3]
+
+
+def detect(rgb, m, use_cache=True, cache=None):
+    """DISPLAY ONLY (camera overlay): top-3 labels with the model's own probability. The controller never
+    reads this, so it cannot change grasp results. Gemini only; None without a key and without a cached answer."""
+    if not m.get("found") or m.get("bbox") is None:
+        return None
+    cache = cache or Cache()
+    model, source = gemini_model(), "gemini-detect"
+    img = perception.crop(rgb, m["bbox"])
+    thumb = perception.thumbnail(img)
+    hit = cache.find(source, model, thumb, version=DETECT_VERSION) if use_cache else None
+    if hit is not None:
+        top = _top3(hit["parsed"])
+        return dict(top3=top, model=model, cached=True, model_latency_s=hit.get("latency_s")) if top else None
+    if not os.environ.get("GEMINI_API_KEY"):
+        return None
+    prompt = (DETECT_PROMPT.replace("@H", f"{m['height_m'] * 1000:.0f}").replace("@W", f"{m['width_m'] * 1000:.0f}")
+              .replace("@L", f"{m['length_m'] * 1000:.0f}").replace("@SHAPE", m["shape"]))
+    t0 = time.time()
+    try:
+        text = _with_timeout(ask_gemini, float(os.environ.get("GEMINI_TIMEOUT", 20)),
+                             perception.jpeg_b64(img), prompt, model)
+        raw = extract_json(text)
+    except Exception:                                  # display only: no answer = no overlay
+        return None
+    top, dt = _top3(raw), time.time() - t0
+    if not top:
+        return None
+    if use_cache:
+        cache.add(dict(source=source, model=model, prompt=DETECT_VERSION,
+                       image_hash=hashlib.sha1(np.ascontiguousarray(img).tobytes()).hexdigest()[:12],
+                       thumb=thumb.tolist(), answer=text[:2000], parsed=raw, latency_s=round(dt, 3),
+                       created=time.strftime("%Y-%m-%d %H:%M:%S")))
+    return dict(top3=top, model=model, cached=False, model_latency_s=round(dt, 3))

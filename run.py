@@ -5,6 +5,8 @@
       Linux/Windows:  python run.py
   Record a video (no window):
       python run.py --mode record --out baseline.mp4          (Linux servers: MUJOCO_GL=egl)
+  Full dashboard live in a browser window, no MuJoCo window (plain python, any OS):
+      python run.py --mode web --policy smart
   Just the numbers, fast:
       python run.py --mode bench
 
@@ -26,7 +28,8 @@
 
   Keys in the live window:
       N  skip to next object      P  pause / resume      R  restart all 15
-      U  baseline force +5 N      J  baseline force -5 N
+      U  baseline force +5 N      J  baseline force -5 N      H  panels inside the 3D window on/off
+  The full dashboard opens in a browser window next to it (http://localhost:8765, --no-web to skip).
 """
 import argparse
 import csv
@@ -222,11 +225,16 @@ def record(args):
 def interactive(args):
     import mujoco
     import mujoco.viewer
-    from dashboard import panel, brain_panel
+    from dashboard import live_overlay
 
     sim, runner = make(args)
     n = round(CTRL_DT / sim.model.opt.timestep)
-    state = dict(paused=False, skip=False, restart=False, dforce=0.0)
+    state = dict(paused=False, skip=False, restart=False, dforce=0.0, overlay=False)
+    web = None
+    if not args.no_web:
+        from live_web import LiveDashboard
+        from dashboard import video_frame
+        web = LiveDashboard(args.port)
 
     def on_key(key):
         k = chr(key) if 32 <= key < 127 else ""
@@ -240,6 +248,8 @@ def interactive(args):
             state["dforce"] += 5
         elif k == "J":
             state["dforce"] -= 5
+        elif k == "H":
+            state["overlay"] = not state["overlay"]
 
     with mujoco.viewer.launch_passive(sim.model, sim.data, key_callback=on_key,
                                       show_left_ui=False, show_right_ui=False) as v:
@@ -283,24 +293,50 @@ def interactive(args):
                         runner.tick()
                         sim.step(n)
             if has_images and frame % 3 == 0:
-                vp = v.viewport
-                pw, ph = 460, int(min(720, vp.height - 20))
-                if vp.width > pw + 40 and ph > 300:
-                    imgs = [(mujoco.MjrRect(vp.width - pw - 10, 10, pw, ph), panel(runner, pw, ph))]
-                    b = brain_panel(runner)                 # smart policy: LOOK / FEEL / DECIDE, top-left
-                    if b is not None and vp.width > pw + b.shape[1] + 40 and vp.height > b.shape[0] + 20:
-                        imgs.append((mujoco.MjrRect(10, vp.height - b.shape[0] - 10, b.shape[1], b.shape[0]), b))
-                    v.set_images(imgs)
+                vp = v.viewport                             # one image: brain + cameras/detector + sensors
+                ov = live_overlay(runner, vp.width, vp.height) if state["overlay"] else None
+                if ov is None:
+                    v.clear_images()
+                else:
+                    oh, ow = ov.shape[:2]
+                    v.set_images([(mujoco.MjrRect(10, vp.height - oh - 10, ow, oh), ov)])
+            if web is not None and frame % 2 == 0:       # full dashboard (same frame as the video) -> browser
+                web.publish(video_frame(runner))
             v.sync()
             frame += 1
             time.sleep(max(0.0, 0.02 - (time.time() - t0)))
+    if web is not None:
+        web.close()
     if runner.results:
         save_results(runner, tag(args))
 
 
+def web_only(args):
+    """No MuJoCo window: run the trials and show the full dashboard in a browser window (plain python)."""
+    from live_web import LiveDashboard
+    from dashboard import video_frame
+    sim, runner = make(args)
+    n = round(CTRL_DT / sim.model.opt.timestep)
+    web = LiveDashboard(args.port)
+    t_start, tail = time.time(), 0
+    while tail < 300:
+        for _ in range(3):                                  # 30 ms of sim per frame
+            runner.tick()
+            sim.step(n)
+        web.publish(video_frame(runner))
+        ahead = sim.time - (time.time() - t_start)          # never faster than real time
+        if ahead > 0:
+            time.sleep(ahead)
+        if runner.finished:
+            tail += 1
+    save_results(runner, tag(args))
+    print("done - the browser window keeps the last frame")
+    time.sleep(2)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", choices=["interactive", "record", "bench"], default="interactive")
+    ap.add_argument("--mode", choices=["interactive", "record", "bench", "web"], default="interactive")
     ap.add_argument("--policy", choices=["baseline", "smart"], default="baseline")
     ap.add_argument("--force", type=float, default=40.0, help="baseline: fixed squeeze force (N)")
     ap.add_argument("--objects", help="comma-separated object names")
@@ -309,8 +345,10 @@ if __name__ == "__main__":
     ap.add_argument("--sample", type=int, help="draw object properties with this seed instead of nominal")
     ap.add_argument("--model", help="smart: Gemini model name (default $GEMINI_MODEL or gemini-3.8-flash)")
     ap.add_argument("--no-cache", action="store_true", help="smart: ignore results/gemini_cache.json")
+    ap.add_argument("--no-web", action="store_true", help="interactive: no live dashboard in the browser")
+    ap.add_argument("--port", type=int, default=8765, help="live dashboard port (browser window)")
     args = ap.parse_args()
     if args.model:
         os.environ["GEMINI_MODEL"] = args.model          # read by vlm.py, inherited by bench processes
     args.out = args.out or f"{tag(args)}.mp4"
-    {"interactive": interactive, "record": record, "bench": bench}[args.mode](args)
+    {"interactive": interactive, "record": record, "bench": bench, "web": web_only}[args.mode](args)

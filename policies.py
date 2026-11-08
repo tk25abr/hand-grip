@@ -75,6 +75,7 @@ class SmartPolicy:
         self.crop = None        # what the vision model was shown (for the dashboard)
         self.log = []           # decisions with reasons, for the dashboard
         self.felt = {}          # what touch measured: stiffness, weight, friction
+        self.detection = None   # display only: top-3 labels + probability for the camera overlay
 
     @property
     def name(self):
@@ -101,6 +102,7 @@ class SmartPolicy:
         self.z0, self.ml, self.win, self.ref, self.waits, self.r_held = None, "rise", [], None, 0, 0.0
         self.slipped, self.mu_obs, self.wbuf, self.weighed = False, None, [], None
         self.n_slip = {}
+        self.vision_dropped = False
 
     # ------------------------------------------------------------------ before touching
     def identify(self, slot, rgb=None, depth=None, sensors=None):
@@ -111,6 +113,7 @@ class SmartPolicy:
         self.percept = perception.measure(rgb, depth, slot, sensors)
         self.crop = perception.crop(rgb, self.percept["bbox"], out_px=192)
         self.guess = vlm.first_guess(rgb, self.percept, use_cache=self.use_cache)
+        self.detection = vlm.detect(rgb, self.percept, use_cache=self.use_cache)   # overlay only, never used below
         return self.guess
 
     def plan(self, slot, sensors):
@@ -238,6 +241,7 @@ class SmartPolicy:
                         self.F_micro = float(np.clip(SF * math.sqrt(m_lo * m_hi) * G / sum(pr["friction_guess"]),
                                                      F_MIN, self.cap))
                         msg += f"; vision's mass guess dropped -> start {self.F_micro:.1f} N"
+                        self.vision_dropped = True
                 else:
                     msg = f"firm: gives only {max(dg, 0):.2f} mm for +{dF:.1f} N (> {dF / max(dg, 0.2):.0f} N/mm)"
                 self.target = float(np.clip(self.F_micro, F_MIN, self.cap))
@@ -345,7 +349,8 @@ class SmartPolicy:
         f_req = SF * m * (G + A_LIFT) / (2 * self.mu_est)
         self.felt["needs_n"] = f_req
         lo, hi = (v * 1000 for v in self.m_guess)
-        src = self.guess["source"].replace("depth-only", "depth prior").replace("gemini", "Gemini")
+        src = ("depth prior" if self.vision_dropped else
+               self.guess["source"].replace("depth-only", "depth prior").replace("gemini", "Gemini"))
         ratio = m * 1000 / math.sqrt(lo * hi) if lo > 0 else 1.0
         cmp_ = f" ({ratio:.1f}x the guess)" if ratio > 1.5 or ratio < 0.67 else ""
         self._say(f"{src} guessed {lo:.0f}-{hi:.0f} g, wrist says {m * 1000:.0f} g{cmp_}", self.t)

@@ -3,6 +3,8 @@ and next to the camera views in recorded videos."""
 import numpy as np
 import cv2
 
+import perception
+from objects import public_slot
 from trial import OUTCOME_COLORS
 
 FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -208,6 +210,90 @@ def brain_panel(runner, w=430, h=300):
     return img
 
 
+def _label(img, lines, x, y, col, scale=0.42):
+    """Filled label box with one bold first line (like a detector tag)."""
+    h = int(16 * scale / 0.42)
+    wmax = max(cv2.getTextSize(l, FONT, scale, 2 if i == 0 else 1)[0][0] for i, l in enumerate(lines)) + 8
+    H, W = img.shape[:2]
+    x = int(np.clip(x, 0, max(0, W - wmax)))
+    y = int(np.clip(y, 0, max(0, H - h * len(lines))))
+    cv2.rectangle(img, (x, y), (x + wmax, y + h * len(lines) + 3), (15, 15, 18), -1)
+    cv2.rectangle(img, (x, y), (x + wmax, y + h * len(lines) + 3), col, 1)
+    for i, l in enumerate(lines):
+        txt(img, l, (x + 4, y + h * (i + 1) - 3), scale if i == 0 else scale * 0.9,
+            col if i == 0 else (225, 225, 230), 2 if i == 0 else 1)
+
+
+def camera_views(runner, cw, ch):
+    """Wrist RGB + depth with the AI detector drawn on top: the box comes from the live depth image
+    (perception.measure, same code the robot uses), the labels + % from the vision model (display only)."""
+    sim, pol = runner.sim, runner.policy
+    rgb = sim.render("wrist_cam", cw, ch).copy()
+    depth = sim.render("wrist_cam", cw, ch, depth=True)
+    dn = (np.clip(1 - (depth - 0.05) / 0.5, 0, 1) * 255).astype(np.uint8)
+    dcol = np.ascontiguousarray(cv2.applyColorMap(dn, cv2.COLORMAP_TURBO)[:, :, ::-1])
+    if runner.finished or not getattr(pol, "uses_camera", False):
+        return rgb, dcol
+    m = perception.measure(rgb, depth, public_slot(runner.slot), sim.read_sensors())
+    det = getattr(pol, "detection", None) if runner.guess is not None else None
+    g = getattr(pol, "guess", None) if runner.guess is not None else None
+    if runner.guess is None:
+        col, lines = (230, 230, 230), ["detecting..."]
+    elif det:
+        col = SOURCE_COLORS["gemini"]
+        lines = [f"{lab} {p * 100:.0f}%" for lab, p in det["top3"]]
+    elif g and g["source"] != "depth-only":
+        col, lines = SOURCE_COLORS.get(g["source"], (230, 230, 230)), [f"{g['object']}", "(no % cached)"]
+    else:
+        col, lines = SOURCE_COLORS["depth-only"], ["unknown object", "depth only, no model"]
+    if m["found"]:
+        x, y, w, h = m["bbox"]
+        for im in (rgb, dcol):
+            cv2.rectangle(im, (x, y), (x + w, y + h), col, 2)
+        _label(rgb, lines, x, y - 16 * len(lines) - 4 if y > 16 * len(lines) + 4 else y + h + 2, col)
+        _label(dcol, [f"h {m['height_m'] * 1000:.0f} mm  w {m['width_m'] * 1000:.0f} mm"], x, y + h + 2,
+               (255, 255, 255), 0.38)
+    elif runner.phase not in ("ABOVE", "TARE"):
+        _label(rgb, [lines[0], "target between the fingers"], 4, ch - 40, col, 0.38)
+    return rgb, dcol
+
+
+def _cam_block(runner, W, ch):
+    cw = (W - 6) // 2
+    rgb, dcol = camera_views(runner, cw, ch)
+    row = np.full((ch + 8, W, 3), 18, np.uint8)
+    row[4:4 + ch, 0:cw] = rgb
+    row[4:4 + ch, W - cw:W] = dcol
+    txt(row, "wrist camera + AI detector", (6, 20), 0.42, (255, 255, 255))
+    txt(row, "wrist depth", (W - cw + 6, 20), 0.42, (255, 255, 255))
+    return row
+
+
+def live_overlay(runner, vw, vh):
+    """ONE image for the MuJoCo window (brain + cameras with detector + sensors), scaled to the window,
+    drawn on the left. (Several separate images do not all show up in every mujoco version.)
+    Picks one column or two columns, whichever gives bigger text."""
+    W = 460
+    b = brain_panel(runner, w=W, h=300)
+    sens = panel(runner, W, 720)
+    # two columns: [brain + tall cameras] | [sensors]
+    top = b.shape[0] if b is not None else 0
+    left = [b] if b is not None else []
+    left.append(_cam_block(runner, W, 720 - top - 8))
+    two = np.hstack([np.vstack(left), np.full((720, 6, 3), 18, np.uint8), sens])
+    # one column: brain / cameras / sensors
+    one_parts = ([b] if b is not None else []) + [_cam_block(runner, W, 170), sens]
+    s2 = min((vh - 20) / two.shape[0], 0.62 * vw / two.shape[1])
+    one_h = sum(p.shape[0] for p in one_parts)
+    s1 = min((vh - 20) / one_h, 0.5 * vw / W)
+    img, s = (two, s2) if s2 >= s1 else (np.vstack(one_parts), s1)
+    if s < 0.3:
+        return None
+    H, Wd = img.shape[:2]
+    out = cv2.resize(img, (int(Wd * s), int(H * s)), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
+    return np.ascontiguousarray(out)
+
+
 def video_frame(runner, W=1280, H=720):
     sim = runner.sim
     img = np.full((H, W, 3), 18, np.uint8)
@@ -217,11 +303,9 @@ def video_frame(runner, W=1280, H=720):
     y0 = 461 + 8
     cw, ch = 266, 200
     close = sim.render("close", cw, ch)
-    rgb = sim.render("wrist_cam", cw, ch)
-    depth = sim.render("wrist_cam", cw, ch, depth=True)
-    dn = (np.clip(1 - (depth - 0.05) / 0.5, 0, 1) * 255).astype(np.uint8)
-    dcol = cv2.applyColorMap(dn, cv2.COLORMAP_TURBO)[:, :, ::-1]
-    for k, (im, lab) in enumerate([(close, "close-up"), (rgb, "wrist camera RGB"), (dcol, "wrist depth")]):
+    rgb, dcol = camera_views(runner, cw, ch)
+    rgb_lab = "wrist camera + AI detector" if getattr(runner.policy, "uses_camera", False) else "wrist camera RGB"
+    for k, (im, lab) in enumerate([(close, "close-up"), (rgb, rgb_lab), (dcol, "wrist depth")]):
         x = 8 + k * (cw + 7)
         img[y0:y0 + ch, x:x + cw] = im
         txt(img, lab, (x + 6, y0 + 16), 0.42, (255, 255, 255))

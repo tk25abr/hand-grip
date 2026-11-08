@@ -1,5 +1,16 @@
 idx,name,result,why,grip_n,peak_n,weight_g,true_g,aperture_mm,true_width_mm,lift_cm,slip_mm,label,source,micro_weight_g
-0,egg,SUCCESS,"lifted 23 cm, slipped 0 mm in the hand",2.68,2.53,61.92,58.0,44.51,44.0,22.94,0.24,egg (gemini),gemini,65.73
-1,strawberry,SUCCESS,"lifted 23 cm, slipped 1 mm in the hand",2.04,1.48,23.78,18.0,32.57,34.0,23.02,0.9,cherry tomato (gemini),gemini,16.55
-2,tomato,SUCCESS,"lifted 22 cm, slipped 1 mm in the hand",3.12,3.12,107.69,110.0,63.39,64.0,22.4,1.35,tomato (gemini),gemini,112.09
-3,paper cup,SUCCESS,"lifted 21 cm, slipped 1 mm in the hand",1.8,1.08,21.55,10.0,68.02,72.0,21.07,1.09,pillar candle (gemini),gemini,14.05
+0,egg,SUCCESS,"lifted 23 cm, slipped 0 mm in the hand",2.68,2.53,59.26,58.0,43.6,44.0,22.94,0.24,egg (gemini),gemini,63.79
+1,strawberry,SUCCESS,"lifted 23 cm, slipped 1 mm in the hand",1.72,1.25,9.41,18.0,33.58,34.0,23.02,0.9,cherry tomato (gemini),gemini,12.97
+2,tomato,SUCCESS,"lifted 22 cm, slipped 1 mm in the hand",3.4,3.4,107.56,110.0,63.45,64.0,22.4,1.37,tomato (gemini),gemini,104.81
+3,paper cup,SUCCESS,"lifted 21 cm, slipped 1 mm in the hand",1.8,1.07,15.06,10.0,67.7,72.0,21.07,1.09,pillar candle (gemini),gemini,12.85
+4,wine glass,SUCCESS,"lifted 19 cm, slipped 0 mm in the hand",4.58,4.58,186.92,180.0,68.05,68.0,18.66,0.09,aerosol spray can (gemini),gemini,175.78
+5,tomato soup can,SUCCESS,"lifted 21 cm, slipped 0 mm in the hand",9.0,9.0,358.24,349.0,67.29,67.0,20.54,0.11,soda can (gemini),gemini,354.42
+6,water bottle 1L,SUCCESS,"lifted 16 cm, slipped 2 mm in the hand",27.91,29.03,1020.2,1025.0,78.5,80.0,15.57,1.73,water bottle (gemini),gemini,1021.61
+7,wooden block,SUCCESS,"lifted 23 cm, slipped 0 mm in the hand",3.75,3.75,120.98,130.0,60.09,60.0,22.66,0.05,sticky note cube (gemini),gemini,137.04
+8,tennis ball,SUCCESS,"lifted 22 cm, slipped 1 mm in the hand",2.68,2.44,56.11,57.6,64.73,65.2,22.42,0.59,lime (gemini),gemini,56.82
+9,smartphone,SUCCESS,"lifted 23 cm, slipped 0 mm in the hand",6.09,6.09,196.88,195.0,72.24,72.0,23.08,0.07,smartphone (gemini),gemini,193.76
+10,steel weight 3kg,DECLINED,"robot refused safely: needs ~74 N to hold, but it may be damaged above ~60 N",31.25,40.57,,3000.0,80.35,80.0,0.1,0.0,tin can (gemini),gemini,2992.84
+11,wet glass jar,DECLINED,"robot refused safely: needs ~42 N to hold, but it may crack above ~36 N",19.61,22.67,,600.0,89.89,90.0,0.19,0.0,ceramic mug (gemini),gemini,597.82
+12,big cardboard box,DECLINED,"robot refused safely: 180 mm wide, the hand opens only 136 mm",0.0,0.0,,300.0,,180.0,0.0,0.0,cardboard box (gemini),gemini,
+13,hardcover book,SUCCESS,"lifted 22 cm, slipped 1 mm in the hand",25.42,25.42,1098.2,1100.0,120.45,120.0,22.4,0.92,book (gemini),gemini,1107.39
+14,plush toy,SUCCESS,"lifted 21 cm, slipped 2 mm in the hand",2.51,2.51,74.55,80.0,88.11,90.0,21.02,2.41,turnip (gemini),gemini,76.64
