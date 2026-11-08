@@ -152,6 +152,20 @@ class Sim:
             if ff > self.slots[idx]["max_force"]:
                 self.crushed.add(idx)
                 self.model.geom_rgba[gid] = [0.9, 0.05, 0.05, 1]
+                self._yield(idx, gid)
+
+    YIELD_SHRINK = 0.0025   # m per side: how much a damaged object gives way under the pads
+
+    def _yield(self, idx, gid):
+        """A real object that cracks, bruises or crumples gives way: the fingers suddenly close further.
+        MuJoCo bodies cannot do that, so damage also shrinks the object across the jaws (y) by ~5 mm.
+        The policy never sees this flag; it can only notice it as a sudden drop in finger aperture."""
+        d = self.YIELD_SHRINK
+        size = self.model.geom_size[gid]
+        if self.slots[idx]["shape"] in ("box", "ellipsoid"):
+            size[1] = max(0.002, size[1] - d)
+        else:                                    # sphere / vertical cylinder: round across the jaws
+            size[0] = max(0.002, size[0] - d)
 
     # ---------------- rendering ----------------
     def render(self, camera, w, h, depth=False):
