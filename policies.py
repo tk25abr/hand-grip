@@ -39,6 +39,7 @@ CLEAR_MIN = 0.004       # pads never lower than 4 mm above the table
 CARRY_MIN = 0.18        # grip low enough that the object is carried at least 18 cm above the table
 BUMP = 1.25             # squeeze test step during the micro-lift
 SLIP_UP = 1.15          # slip reflex step
+LOAD_RISE = 1.3         # wrist load this much above the weighed weight while holding = something was added
 # --- learning on the fly (this branch) -------------------------------------------------------------
 ESC_FACTOR = 2.0        # may challenge a GUESSED strength limit by at most 2x ...
 F_ESC_MAX = 100.0       # ... and never beyond 100 N (the gripper makes 120)
@@ -116,6 +117,7 @@ class SmartPolicy:
         self.slipped, self.mu_obs, self.wbuf, self.weighed = False, None, [], None
         self.n_slip = {}
         self.vision_dropped = False
+        self.lbuf = []          # wrist load while holding (scene-change watch)
         self.thumb, self.mem = None, None
         self.esc, self.ap_hist, self.ap_ref, self.yield_n = None, [], None, 0
         self.cap_relaxed, self.cap_guess = False, F_MAX
@@ -218,6 +220,10 @@ class SmartPolicy:
             return self._microlift(s)
         if phase == "WEIGH":
             return self._weigh(s)
+        if phase == "HOLD":
+            r = self._load_watch(s)
+            if r:
+                return r
         if phase in ("LIFT", "HOLD", "SHAKE"):
             return self._slip_reflex(phase, s)
         return None
@@ -489,6 +495,36 @@ class SmartPolicy:
         if phase in ("MICROLIFT", "WEIGH"):                     # still low: set it down gently
             return dict(force=max(F_MIN, 0.5 * self.F), abort=say)
         return None                                             # in the air: do not drop what is left of it
+
+    def _load_watch(self, s):
+        """Holding still: the wrist feels the load. If it grows well past what was weighed, something was
+        added (a container being filled). Re-plan the squeeze from the new weight before it slips; if the new
+        squeeze would pass the safe limit, carry it back down instead of risking a drop."""
+        m0 = self.felt.get("weight_g")
+        if not m0:
+            return None
+        self.lbuf.append(s["wrist_force"][2] - self.tare)
+        self.lbuf = self.lbuf[-15:]                       # 0.15 s
+        if len(self.lbuf) < 15:
+            return None
+        m = max(0.0, float(np.median(self.lbuf))) / G * 1000
+        if m < LOAD_RISE * m0 + 20:                       # +30 % and at least +20 g
+            return None
+        self.lbuf = []
+        self.felt["weight_g"] = m
+        f_req = SF * (m / 1000) * (G + A_LIFT) / (2 * self.mu_est)
+        self.felt["needs_n"] = f_req
+        head = f"load rose {m0:.0f} -> {m:.0f} g while holding (something was added)"
+        if f_req > self.cap and self.learn and self._may_escalate(f_req):
+            self.cap = max(self.cap, 1.05 * min(f_req, F_ESC_MAX))
+            self.cap_relaxed = True
+            head += f"; feels firm, challenging my limit guess"
+        if f_req > self.cap:
+            return dict(abort=self._say(f"{head}: needs ~{f_req:.0f} N, safe limit ~{self.cap:.0f} N -> "
+                                        f"carrying it back down", self.t), force=self.F)
+        old = self.F
+        new = max(old, f_req)
+        return self._f(new, say=f"{head}: grip {old:.1f} -> {min(new, self.cap):.1f} N")
 
     def _slip_reflex(self, phase, s):
         """Shear/normal close to the friction estimate -> squeeze 15 % harder (never above the cap)."""

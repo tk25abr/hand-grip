@@ -28,6 +28,22 @@ def sensor_row(img, y, label, value, frac, col, w):
     txt(img, value, (w - 118, y + 11), 0.45, (255, 255, 255))
 
 
+def change_banner(img, runner, x, y, w):
+    """Big violet banner while a mid-run scene change is active in this trial."""
+    if runner.finished or getattr(runner, "load_t", None) is None:
+        return
+    f = runner.sim.loaded.get(runner.slot["idx"])
+    if f is None:
+        return
+    t = runner.sim.time - runner.load_t
+    cv2.rectangle(img, (x, y), (x + w, y + 44), (110, 40, 170), -1)
+    cv2.rectangle(img, (x, y), (x + w, y + 44), (230, 200, 255), 2)
+    txt(img, f"SCENE CHANGE: +{(f - 1) * 100:.0f}% weight ({t:.1f} s ago)", (x + 10, y + 19), 0.52,
+        (255, 255, 255), 2)
+    txt(img, "the robot was not told - it must feel it through the wrist", (x + 10, y + 37), 0.42,
+        (235, 220, 255))
+
+
 def panel(runner, w=460, h=720):
     """Live sensor readout for the current trial + results so far."""
     img = np.full((h, w, 3), 24, np.uint8)
@@ -287,6 +303,8 @@ def live_overlay(runner, vw, vh):
     one_h = sum(p.shape[0] for p in one_parts)
     s1 = min((vh - 20) / one_h, 0.5 * vw / W)
     img, s = (two, s2) if s2 >= s1 else (np.vstack(one_parts), s1)
+    img = img.copy()
+    change_banner(img, runner, 6, 6, min(448, img.shape[1] - 12))
     if s < 0.3:
         return None
     H, Wd = img.shape[:2]
@@ -319,4 +337,5 @@ def video_frame(runner, W=1280, H=720):
         roi = img[28:28 + bh, 8:8 + bw]
         img[28:28 + bh, 8:8 + bw] = (0.15 * roi + 0.85 * b).astype(np.uint8)
     img[0:H, 820:W] = panel(runner, W - 820, H)
+    change_banner(img, runner, 450, 8, 362)
     return img

@@ -124,6 +124,7 @@ class TrialRunner:
         self.log_series = log_series
         self.finished = False
         self.t_next = 0.0
+        self.change = None      # scene change: dict(factor=2.5, names={...} or None, at=0.4 s into HOLD)
         self._next_trial()
 
     # ------------------------------------------------------------------ helpers
@@ -156,6 +157,7 @@ class TrialRunner:
         self.micro_weight_g = None
         self.max_cmd = 0.0
         self.grasp_z = None
+        self.load_t = None                       # sim time of a mid-run load change in this trial
         self.decision = "moving to next slot"
         self.sim.grip(-10)                       # open
         self.cmd = np.array(self.sim.target, float)
@@ -249,10 +251,17 @@ class TrialRunner:
             if arrived and self._settled(0.01):
                 self._set_phase("HOLD")
         elif ph == "HOLD":
-            self._adjust(s)
+            c = self.change
+            if (c and self.load_t is None and t_in > c.get("at", 0.4)
+                    and (not c.get("names") or sl["name"].lower() in c["names"])):
+                self.add_load(c["factor"])
+            r = self._adjust(s)
+            if r["abort"]:                           # the policy decided to carry it back down
+                self._abort(r["abort"])
+                return self._log_tick(s)
             if t_in > 0.5:
                 self.weight_g = max(0.0, (s["wrist_force"][2] - self.tare) / G * 1000)
-            if t_in > 1.2:
+            if t_in > 1.2 and (self.load_t is None or self.sim.time - self.load_t > 1.8):
                 self.judge.weight_g = self.weight_g
                 self.goal = np.array([sl["x"] + 0.12, sl["y"], HOVER_Z])
                 self.speed = 0.6
@@ -279,6 +288,20 @@ class TrialRunner:
             self._finish_trial()
             return
 
+        self._log_tick(s)
+
+    def add_load(self, factor):
+        """Scene change while the object is in the hand (scheduled with .change, or the L key live)."""
+        if self.finished or self.phase not in ("LIFT", "HOLD", "SHAKE") or self.load_t is not None:
+            return False
+        self.sim.add_load(self.slot["idx"], factor)
+        self.load_t = self.sim.time
+        self.decision = f"SCENE CHANGE: object now {factor:g}x heavier (robot not told)"
+        print(f"  scene change: {self.slot['name']} is now {factor:g}x heavier", flush=True)
+        return True
+
+    def _log_tick(self, s):
+        sl = self.slot
         self.judge.tick(self.phase, s)
         if self.log_series:
             self.series.append(dict(t=self.sim.time, phase=self.phase, grip_cmd=s["grip_cmd"],
@@ -302,6 +325,11 @@ class TrialRunner:
             sl = self.slot
             self.goal = np.array([sl["x"], sl["y"], self.grasp_z + 0.001])
             self.speed = 0.02
+            self._set_phase("PUTDOWN")
+        elif self.phase in ("LIFT", "HOLD", "SHAKE") and self.grasp_z is not None:
+            sl = self.slot                               # in the air: carry it back down, then let go
+            self.goal = np.array([sl["x"], sl["y"], self.grasp_z + 0.002])
+            self.speed = 0.08
             self._set_phase("PUTDOWN")
         else:
             self.sim.grip(-10)

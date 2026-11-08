@@ -40,6 +40,11 @@ class Sim:
         self.renderer = None
         self._renderers = {}
         self._rng = np.random.default_rng(seed)
+        self._mass0 = self.model.body_mass.copy()          # for undoing a mid-run load change
+        self._inertia0 = self.model.body_inertia.copy()
+        self._slot_mass0 = [sl["mass"] for sl in self.slots]
+        self._rgba0 = self.model.geom_rgba.copy()
+        self.loaded = {}                                     # idx -> factor of a mid-run load change
 
     # ---------------- actuation ----------------
     def move_to(self, x, y, z):
@@ -192,9 +197,26 @@ class Sim:
         return rgb, depth
 
     # ---------------- test-bench reset (not the robot) ----------------
+    def add_load(self, idx, factor):
+        """SCENE CHANGE (test bench, not the robot): the object gets heavier while it is held - a container
+        being filled, a sample dropped into it. The robot is not told; it can only feel it."""
+        b = self.obj_body[idx]
+        self.model.body_mass[b] *= factor
+        self.model.body_inertia[b] *= factor
+        self.slots[idx]["mass"] *= factor
+        self.loaded[idx] = factor
+        if idx not in self.crushed:                           # visible in every view: turns violet
+            self.model.geom_rgba[self.obj_geom[idx]] = [0.62, 0.25, 0.95, 1]
+
     def reset_object(self, idx):
         """Put an object back on its slot after a trial (a lab technician resetting the bench).
-        Crushed objects stay red so you can see what happened."""
+        Crushed objects stay red so you can see what happened. A mid-run load change is undone."""
+        b = self.obj_body[idx]
+        self.model.body_mass[b] = self._mass0[b]
+        self.model.body_inertia[b] = self._inertia0[b]
+        self.slots[idx]["mass"] = self._slot_mass0[idx]
+        if self.loaded.pop(idx, None) is not None and idx not in self.crushed:
+            self.model.geom_rgba[self.obj_geom[idx]] = self._rgba0[self.obj_geom[idx]]
         s = self.slots[idx]
         jid = self.model.body(f"body{idx}").jntadr[0]
         qa = self.model.jnt_qposadr[jid]

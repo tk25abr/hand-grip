@@ -7,6 +7,9 @@
       python run.py --mode record --out baseline.mp4          (Linux servers: MUJOCO_GL=egl)
   Full dashboard live in a browser window, no MuJoCo window (plain python, any OS):
       python run.py --mode web --policy smart
+  Scene change mid-run (object gets heavier while held, robot not told):
+      python run.py --mode bench --policy smart --load-change 2.5
+      python run.py --mode record --policy smart --load-change 2.5 --objects "tomato soup can,egg" --out change.mp4
   Just the numbers, fast:
       python run.py --mode bench
 
@@ -29,6 +32,7 @@
   Keys in the live window:
       N  skip to next object      P  pause / resume      R  restart all 15
       U  baseline force +5 N      J  baseline force -5 N      H  panels inside the 3D window on/off
+      L  SCENE CHANGE: the held object becomes 2.5x heavier now (or --load-change x)
   The full dashboard opens in a browser window next to it (http://localhost:8765, --no-web to skip).
 """
 import argparse
@@ -70,7 +74,11 @@ def make(args, seed=None):
     if args.objects:
         want = [w.strip().lower() for w in args.objects.split(",")]
         order = [s["idx"] for s in sim.slots if s["name"].lower() in want]
-    return sim, TrialRunner(sim, make_policy(args), order=order)
+    runner = TrialRunner(sim, make_policy(args), order=order)
+    if getattr(args, "load_change", None):
+        names = ({w.strip().lower() for w in args.load_objects.split(",")} if args.load_objects else None)
+        runner.change = dict(factor=args.load_change, names=names, at=0.4)
+    return sim, runner
 
 
 def save_results(runner, tag):
@@ -229,7 +237,7 @@ def interactive(args):
 
     sim, runner = make(args)
     n = round(CTRL_DT / sim.model.opt.timestep)
-    state = dict(paused=False, skip=False, restart=False, dforce=0.0, overlay=False)
+    state = dict(paused=False, skip=False, restart=False, dforce=0.0, overlay=False, load=False)
     web = None
     if not args.no_web:
         from live_web import LiveDashboard
@@ -250,6 +258,8 @@ def interactive(args):
             state["dforce"] -= 5
         elif k == "H":
             state["overlay"] = not state["overlay"]
+        elif k == "L":
+            state["load"] = True
 
     with mujoco.viewer.launch_passive(sim.model, sim.data, key_callback=on_key,
                                       show_left_ui=False, show_right_ui=False) as v:
@@ -283,6 +293,10 @@ def interactive(args):
                     runner.policy.force = float(np.clip(runner.policy.force + state["dforce"], 5, 120))
                     print(f"baseline force now {runner.policy.force:.0f} N (applies from the next grasp)")
                     state["dforce"] = 0.0
+                if state["load"]:                           # live scene change: object gets heavier now
+                    state["load"] = False
+                    if not runner.add_load(args.load_change or 2.5):
+                        print("L: works while the object is in the air (LIFT / HOLD / SHAKE)")
                 if state["skip"] and not runner.finished:
                     state["skip"] = False
                     sim.grip(-10)
@@ -346,6 +360,9 @@ if __name__ == "__main__":
     ap.add_argument("--model", help="smart: Gemini model name (default $GEMINI_MODEL or gemini-3.8-flash)")
     ap.add_argument("--no-cache", action="store_true", help="smart: ignore results/gemini_cache.json")
     ap.add_argument("--no-learn", action="store_true", help="smart: switch off the learning layer (yield sensing, limit challenge, memory)")
+    ap.add_argument("--load-change", type=float, help="scene change: object gets this many times heavier "
+                                                       "0.4 s into HOLD (robot not told), e.g. 2.5")
+    ap.add_argument("--load-objects", help="scene change only for these objects (comma-separated; default all)")
     ap.add_argument("--no-web", action="store_true", help="interactive: no live dashboard in the browser")
     ap.add_argument("--port", type=int, default=8765, help="live dashboard port (browser window)")
     args = ap.parse_args()
