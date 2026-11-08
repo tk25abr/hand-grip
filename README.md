@@ -155,3 +155,51 @@ stiffness calibration · `calibration.json` · `scene.py` MJCF · `sim.py` physi
 `trial.py` pick sequence + judge · `policies.py` baseline + smart · `perception.py` depth -> size ·
 `vlm.py` Gemini / Gemma / depth-only first guess + cache · `guess_all.py` first guess for all 15 ·
 `dashboard.py` · `run.py` · `tests/` · `results/`
+
+## Learning layer (added on branch `learn-on-the-fly`)
+
+Three additions to `SmartPolicy`, all sensor-only (`tests/test_no_ground_truth.py` still passes) and all
+switched off by `--no-learn` (or `SmartPolicy(learn=False)`), which gives the policy exactly as it was.
+
+1. **It can feel an object give way.** Real objects that crack or crumple let the fingers close suddenly
+   further. MuJoCo bodies can't, so `sim._yield()` shrinks a damaged object ~5 mm across the jaws. The policy
+   (`_yield_watch`) notices a drop in finger aperture of more than 2.5 mm within 0.1 s that elasticity does
+   not explain, with both pads still loaded (a drop with the pads unloaded is the object falling out, not
+   giving way).
+2. **It challenges a guessed strength limit instead of obeying it.** The vision model / depth prior says "may
+   be damaged above X N" - a guess. If the object then feels firm and heavy and needs more than X, the policy
+   raises the squeeze slowly (at most 2x the guess, never past 100 N) while watching for it to give way, and
+   remembers what happened. A limit that was felt (soft objects) or remembered (a crush) is never challenged.
+   `CHALLENGE_FRAGILE = False` in `policies.py` stops it challenging limits the vision model flagged fragile.
+3. **It remembers (`memory.py`).** Keyed by what the object looks like (the same thumbnail the vision cache
+   uses): the squeeze that held it, the squeeze at which it gave way, its weight, its measured friction. A
+   second visit starts from that, stays below a remembered crush limit and refuses before touching what it
+   already knows it cannot hold.
+
+Measured on this repo's 15 objects, sampled properties, offline Gemini cache (no key):
+
+| | picked up / 15 | crushed | slipped or dropped |
+|---|---|---|---|
+| before (commit 59ca341), 10 runs | 12.1 | 0 | 0 |
+| with the learning layer, 10 runs | 14.0 | 0 | 0 |
+
+The one object still refused is the 18 cm box: the hand opens 13.6 cm. `python learning_bench.py` runs the 15
+objects twice with the memory kept (3 seeds), learning on vs off:
+
+| | learning | pass 1 picked up | pass 2 picked up | crushed (pass 1 / pass 2) |
+|---|---|---|---|---|
+| random objects | off | 11.7 | 11.7 | 0 / 0 |
+| random objects | on | 13.7 | 13.7 | 0 / 0 |
+| `--stress`: wet jar made heavy AND fragile | off | 11.7 | 11.7 | 0 / 0 |
+| `--stress` | on | 12.7 | 12.7 | 1.0 / 0 |
+
+Honest limits: (a) in the stress case the first heavy fragile object IS crushed once - the guess was right
+and challenging it costs one object; the second visit refuses it instead. (b) Memory does not make repeat
+visits faster here (164 s vs 161 s of robot time per 15 objects): its value is not repeating a mistake and
+deciding before touching. (c) The 15 objects look different from each other, so within one pass the memory
+is never used; it matters on repeats and families of similar objects. (d) The crush signature is something we
+added to the simulator; a real gripper would need a real signal for it (a sudden gap change).
+
+`python latency.py` prints where the robot's own computation goes (CPU only; sandbox 2-core x86: depth to
+object 19 ms, first guess 4 ms from the cache, control-loop decision 0.03 ms mean / 2.8 ms max against a 10 ms
+tick). A live Gemini call is a network request and is not in these numbers.

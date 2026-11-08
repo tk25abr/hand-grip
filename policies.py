@@ -20,6 +20,7 @@ import numpy as np
 
 import perception
 import vlm
+from memory import ObjectMemory
 from objects import TABLE_Z
 from scene import MAX_OPENING, PAD_HALF, PAD_Z, PALM_ABOVE_PAD
 
@@ -38,6 +39,16 @@ CLEAR_MIN = 0.004       # pads never lower than 4 mm above the table
 CARRY_MIN = 0.18        # grip low enough that the object is carried at least 18 cm above the table
 BUMP = 1.25             # squeeze test step during the micro-lift
 SLIP_UP = 1.15          # slip reflex step
+# --- learning on the fly (this branch) -------------------------------------------------------------
+ESC_FACTOR = 2.0        # may challenge a GUESSED strength limit by at most 2x ...
+F_ESC_MAX = 100.0       # ... and never beyond 100 N (the gripper makes 120)
+ESC_RATE = 80.0         # N/s while raising the squeeze to a challenged limit
+YIELD_MM = 2.5          # fingers closing this much further than elasticity explains = the object gave way
+YIELD_TICKS = 3         # ... for this many control ticks in a row (sensor noise is ~0.3 mm)
+YIELD_MAX_MM = 7.0      # ... but a drop of more than this with the pads unloaded is the object FALLING OUT, not giving way
+YIELD_WINDOW = 10       # ... within this many ticks (0.1 s): giving way is sudden, squeezing is gradual
+CHALLENGE_FRAGILE = True  # False = never challenge a limit the vision model flagged fragile (safer, refuses the jar)
+CRUSH_BACKOFF = 0.7     # a remembered crush at X N means: stay below 0.7 x X from now on
 
 
 class BaselinePolicy:
@@ -68,8 +79,10 @@ class SmartPolicy:
     """Look first (depth size + VLM guess), then feel (stiffness, weight, slip) and correct."""
     uses_camera = True
 
-    def __init__(self, use_cache=True):
+    def __init__(self, use_cache=True, learn=True, memory=None):
         self.use_cache = use_cache
+        self.learn = learn                       # False = hand-grip as it was before the learning layer
+        self.memory = memory if memory is not None else (ObjectMemory() if learn else None)
         self.percept = None     # depth measurement of the current object
         self.guess = None       # first guess (VLM or depth-only prior) for the current object
         self.crop = None        # what the vision model was shown (for the dashboard)
@@ -103,6 +116,10 @@ class SmartPolicy:
         self.slipped, self.mu_obs, self.wbuf, self.weighed = False, None, [], None
         self.n_slip = {}
         self.vision_dropped = False
+        self.thumb, self.mem = None, None
+        self.esc, self.ap_hist, self.ap_ref, self.yield_n = None, [], None, 0
+        self.cap_relaxed, self.cap_guess = False, F_MAX
+        self.mem_crush_seen, self.known_before, self.esc_lift = False, False, 0.15
 
     # ------------------------------------------------------------------ before touching
     def identify(self, slot, rgb=None, depth=None, sensors=None):
@@ -114,6 +131,10 @@ class SmartPolicy:
         self.crop = perception.crop(rgb, self.percept["bbox"], out_px=192)
         self.guess = vlm.first_guess(rgb, self.percept, use_cache=self.use_cache)
         self.detection = vlm.detect(rgb, self.percept, use_cache=self.use_cache)   # overlay only, never used below
+        if self.memory is not None and self.percept["found"]:
+            self.thumb = perception.thumbnail(perception.crop(rgb, self.percept["bbox"]))
+            self.mem = self.memory.recall(self.thumb)       # what I felt the last time I saw this look
+            self.memory.seen(self.thumb)
         return self.guess
 
     def plan(self, slot, sensors):
@@ -137,14 +158,33 @@ class SmartPolicy:
         self.cap = min(F_MAX, 0.6 * self.safe_lo if self.fragile else self.safe_lo)
         if self.cap < 0.5:
             return decline(f"may be damaged above {self.safe_lo:.1f} N, too delicate for this gripper")
+        self.cap_guess = self.cap
+        mem = self.mem or {}
+        if mem.get("crush_n"):                         # I have already felt this one give way: stay below that
+            self.cap = min(self.cap, CRUSH_BACKOFF * mem["crush_n"])
+            self._say(f"remembered: this gave way at {mem['crush_n']:.0f} N -> cap {self.cap:.1f} N", self.t)
+        elif mem.get("held_n") and mem["held_n"] > self.cap:    # held it before at a force above the guess
+            self.cap = min(F_MAX, 1.1 * mem["held_n"])
+            self._say(f"remembered: held at {mem['held_n']:.0f} N without it giving way -> cap {self.cap:.0f} N",
+                      self.t)
+        if mem.get("needs_n") and mem["needs_n"] > self.cap:
+            return decline(f"remembered: needs ~{mem['needs_n']:.0f} N to hold, limit ~{self.cap:.0f} N")
         mu_lo, mu_hi = g["friction_guess"]
         if g["surface"] in ("wet", "slippery"):
             mu_lo = min(mu_lo, 0.25)                   # wet / slippery: be conservative
+        if mem.get("mu_measured"):                     # I have felt it slide before: trust that over the guess
+            mu_lo = min(mu_lo, mem["mu_measured"])
+            mu_hi = min(mu_hi, max(mu_lo, mem["mu_measured"]))
         self.mu_lo = self.mu_est = mu_lo
         m_lo, m_hi = (v / 1000 for v in g["mass_g"])
         self.m_guess = (m_lo, m_hi)
         f_micro = SF * math.sqrt(m_lo * m_hi) * G / (2 * (mu_lo + mu_hi) / 2)
         self.F_micro = float(np.clip(f_micro, F_MIN, self.cap))
+        if mem.get("held_n") and (mem.get("mu_measured") or mem["held_n"] <= 2.0 * f_micro):
+            # start where it was held last time - but only when its friction is known (it was seen sliding) or
+            # the old squeeze is close to what the guess says anyway; otherwise a high start would hide the friction
+            self.F_micro = float(np.clip(mem["held_n"], F_MIN, self.cap))
+            self.known_before = True
         self.w_mm = w * 1000
         # pads at mid-height, never below 4 mm, low enough to carry it high (the hand is at its carrying
         # height right now, in TARE), but always high enough that the palm clears the top
@@ -168,6 +208,10 @@ class SmartPolicy:
     # ------------------------------------------------------------------ every 10 ms
     def adjust(self, phase, slot, s):
         self.t = s["t"]
+        if self.learn:
+            y = self._yield_watch(phase, s)
+            if y:
+                return y
         if phase == "CLOSE":
             return self._close(s)
         if phase == "MICROLIFT":
@@ -304,7 +348,7 @@ class SmartPolicy:
                 if self.waits < (8 if self.soft else 4):   # soft objects take time to build it up
                     self.waits += 1
                     return self._f(self.F)
-                if self.F >= self.cap - 1e-9:
+                if self.F >= self.cap - 1e-9 and not self._relax_cap():
                     return dict(abort=self._say(f"cannot confirm a secure grip at {self.cap:.1f} N", self.t))
                 self.ref, self.F_before, self.waits = (r, n, tang), self.F, 0
                 return self._f(self.F * BUMP)               # no proof either way: squeeze a bit more
@@ -324,7 +368,7 @@ class SmartPolicy:
             mu = f"friction ~{r:.2f}" if r is not None else "pads chattering"
             say = f"squeeze test: lifting force grew with the squeeze -> it is sliding ({mu}); tightening"
         self.n_slip["micro"] = self.n_slip.get("micro", 0) + 1
-        if self.F >= self.cap - 1e-9:
+        if self.F >= self.cap - 1e-9 and not self._relax_cap():
             return dict(abort=self._say(f"still slipping at {self.cap:.0f} N, the most it may take", self.t))
         self.ref, self.F_before, self.waits = (r, n, tang), self.F, 0
         return self._f(self.F * BUMP, say=say)
@@ -333,6 +377,16 @@ class SmartPolicy:
         """Still in the air for 0.3 s: weigh it, compute the squeeze it needs, compare with the cap."""
         self.wbuf.append(s["wrist_force"][2] - self.tare)
         if self.weighed is not None:
+            return self.weighed
+        if self.esc is not None:                       # raising the squeeze to a challenged limit
+            if self.F < self.esc - 1e-9:
+                return self._f(min(self.F + ESC_RATE * DT, self.esc))
+            lift = self.esc_lift
+            self.weighed = dict(self._f(self.esc, say=f"raised to {self.esc:.0f} N: it holds and did not give way "
+                                                      f"(my guess said ~{self.cap_guess:.0f} N)"),
+                                done=True, lift_speed=lift)
+            self.esc = None
+            self._remember(held=True)
             return self.weighed
         if self.ml != "ok":
             self.weighed = dict(abort=self._say("could not confirm a secure grip in the micro-lift", self.t))
@@ -357,16 +411,84 @@ class SmartPolicy:
         mu_why = (f"measured friction {self.mu_obs:.2f} x 0.85" if measured else
                   f"friction >= {self.mu_est:.2f} ({'proven by the squeeze test' if self.r_held > self.mu_lo else 'guess'})")
         fmt = lambda f: f"{f:.0f}" if f >= 10 else f"{f:.1f}"
+        lift = 0.08 if (self.fragile or self.soft or m > 1.0) else 0.15
+        if f_req > self.cap and self._may_escalate(f_req):
+            # my limit was a GUESS (vision / depth prior). It feels firm and heavy: challenge the guess,
+            # carefully, with the yield sensor watching, and remember what happens.
+            self.esc, self.esc_lift = min(f_req, F_ESC_MAX), lift
+            self.cap = max(self.cap, 1.05 * self.esc)
+            self.cap_relaxed = True
+            self._say(f"needs ~{fmt(f_req)} N but my limit guess is ~{fmt(self.cap_guess)} N and it feels firm: "
+                      f"raising slowly, watching for it to give way", self.t)
+            return self._f(min(self.F + ESC_RATE * DT, self.esc))
         if f_req > self.cap:
             harm = "crack" if self.fragile else "be damaged"
+            self._remember(held=False)
             self.weighed = dict(abort=self._say(f"needs ~{fmt(f_req)} N to hold, but it may {harm} above "
                                                 f"~{fmt(self.cap)} N", self.t))
             return self.weighed
         new = max(F_MIN, f_req)
-        lift = 0.08 if (self.fragile or self.soft or m > 1.0) else 0.15
         msg = f"weight {m * 1000:.0f} g, {mu_why} -> grip {self.F:.1f} -> {min(new, self.cap):.1f} N"
         self.weighed = dict(self._f(new, say=msg), done=True, lift_speed=lift)
+        self._remember(held=True)
         return self.weighed
+
+    # ------------------------------------------------------------------ learning on the fly
+    def _may_escalate(self, f_req):
+        """A limit that came from vision or a depth prior is a guess; one that was felt (soft) or remembered
+        (crush) is not. Challenge a guess only if the object feels firm, by at most 2x, never past 100 N."""
+        crush_known = bool(self.mem and self.mem.get("crush_n"))
+        return (self.learn and not self.soft and not crush_known and (CHALLENGE_FRAGILE or not self.fragile)
+                and f_req <= min(F_ESC_MAX, ESC_FACTOR * self.cap) and self.thumb is not None)
+
+    def _relax_cap(self):
+        """Slipping at a guessed cap before it could even be weighed: a failed lift cannot measure weight,
+        so go up in small steps (same 1.25x as the squeeze test) while it stays firm and does not give way."""
+        if (not self.learn or self.soft or (self.mem and self.mem.get("crush_n"))
+                or not (CHALLENGE_FRAGILE or not self.fragile)):
+            return False
+        new = self.cap * BUMP
+        if new > min(F_ESC_MAX, ESC_FACTOR * self.cap_guess):
+            return False
+        self._say(f"slipping at my guessed limit {self.cap:.0f} N, object feels firm -> allowing {new:.0f} N", self.t)
+        self.cap, self.cap_relaxed = new, True
+        return True
+
+    def _remember(self, held):
+        if self.memory is None or self.thumb is None:
+            return
+        facts = dict(weight_g=self.felt.get("weight_g"), stiffness=self.k, needs_n=self.felt.get("needs_n"))
+        if self.slipped and self.mu_obs is not None:             # friction is only KNOWN if it was seen sliding
+            facts["mu_measured"] = 0.85 * self.mu_obs
+        if held:
+            facts["held_n"] = self.F
+        self.memory.record(self.thumb, **facts)
+
+    def _yield_watch(self, phase, s):
+        """Did the object just give way under the pads? Real objects that crack or crumple let the fingers
+        close suddenly further than their stiffness explains. Only encoders are used."""
+        if phase not in ("MICROLIFT", "WEIGH", "LIFT", "HOLD", "SHAKE") or self.soft:
+            return None
+        self.ap_hist.append((s["aperture_mm"], self.F))
+        self.ap_hist = self.ap_hist[-YIELD_WINDOW:]             # 0.1 s of history
+        if len(self.ap_hist) < YIELD_WINDOW or self.mem_crush_seen:
+            return None
+        ap_now = float(np.median([a for a, _ in self.ap_hist[-3:]]))
+        a0, f0 = max(self.ap_hist[:-3], key=lambda t: t[0])
+        allow = YIELD_MM + max(0.0, self.F - f0) / max(self.k or 5.0, 5.0)   # elastic closing is allowed
+        drop = a0 - ap_now
+        loaded = min(s["touch_l"], s["touch_r"]) > 0.3          # both pads still feel the object
+        self.yield_n = self.yield_n + 1 if (drop > allow and drop < YIELD_MAX_MM and loaded) else 0
+        if self.yield_n < YIELD_TICKS:
+            return None
+        self.mem_crush_seen = True
+        if self.memory is not None and self.thumb is not None:
+            self.memory.record(self.thumb, crush_n=self.F)
+        say = self._say(f"it GAVE WAY at ~{self.F:.0f} N: fingers closed {drop:.1f} mm further than "
+                        f"its stiffness explains; remembering that limit", self.t)
+        if phase in ("MICROLIFT", "WEIGH"):                     # still low: set it down gently
+            return dict(force=max(F_MIN, 0.5 * self.F), abort=say)
+        return None                                             # in the air: do not drop what is left of it
 
     def _slip_reflex(self, phase, s):
         """Shear/normal close to the friction estimate -> squeeze 15 % harder (never above the cap)."""
@@ -378,5 +500,8 @@ class SmartPolicy:
             say = None
             if n == 0:
                 say = f"{phase}: slip risk {sr:.2f} > 0.8 x {self.mu_est:.2f} -> grip {old:.1f} -> {old * SLIP_UP:.1f} N"
-            return self._f(old * SLIP_UP, say=say)
+            out = self._f(old * SLIP_UP, say=say)
+            if self.memory is not None and self.thumb is not None and not self.mem_crush_seen:
+                self.memory.record(self.thumb, held_n=self.F)
+            return out
         return None

@@ -50,7 +50,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def make_policy(args):
     if args.policy == "smart":
-        return SmartPolicy(use_cache=not args.no_cache)
+        return SmartPolicy(use_cache=not args.no_cache, learn=not getattr(args, "no_learn", False))
     return BaselinePolicy(force=args.force)
 
 
@@ -345,6 +345,7 @@ if __name__ == "__main__":
     ap.add_argument("--sample", type=int, help="draw object properties with this seed instead of nominal")
     ap.add_argument("--model", help="smart: Gemini model name (default $GEMINI_MODEL or gemini-3.8-flash)")
     ap.add_argument("--no-cache", action="store_true", help="smart: ignore results/gemini_cache.json")
+    ap.add_argument("--no-learn", action="store_true", help="smart: switch off the learning layer (yield sensing, limit challenge, memory)")
     ap.add_argument("--no-web", action="store_true", help="interactive: no live dashboard in the browser")
     ap.add_argument("--port", type=int, default=8765, help="live dashboard port (browser window)")
     args = ap.parse_args()
