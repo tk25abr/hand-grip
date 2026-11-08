@@ -1,0 +1,7 @@
+mujoco>=3.3          # 3.3+ needed for the sensor panel inside the MuJoCo window
+numpy
+opencv-python-headless
+imageio[ffmpeg]
+matplotlib
+google-genai>=2.3    # Gemini Interactions API (smart policy; optional - falls back to local Gemma / depth-only)
+pytest

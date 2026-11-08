@@ -1,0 +1,559 @@
+[
+ {
+  "idx": 0,
+  "object": "egg",
+  "material": "eggshell",
+  "mass_g": [
+   50.0,
+   70.0
+  ],
+  "fragile": true,
+  "max_safe_squeeze_n": [
+   15.0,
+   35.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Delicate brittle shell that requires gentle, compliant gripping force to avoid cracking.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.003,
+  "model_latency_s": 6.833,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 43,
+   "width_mm": 42,
+   "length_mm": 56,
+   "shape": "round, domed (sphere/ellipsoid)",
+   "cut_off": false
+  },
+  "image_hash": "50690037e6f2"
+ },
+ {
+  "idx": 1,
+  "object": "cherry tomato",
+  "material": "food / organic tissue",
+  "mass_g": [
+   15.0,
+   25.0
+  ],
+  "fragile": true,
+  "max_safe_squeeze_n": [
+   5.0,
+   12.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.6
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Soft-skinned fruit that easily bruises or bursts under moderate gripping force. [filled from depth prior: surface]",
+  "invalid_fields": [
+   "surface"
+  ],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 8.187,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 34,
+   "width_mm": 32,
+   "length_mm": 32,
+   "shape": "round, domed (sphere/ellipsoid)",
+   "cut_off": false
+  },
+  "image_hash": "48f5ab709fa3"
+ },
+ {
+  "idx": 2,
+  "object": "tomato",
+  "material": "organic produce",
+  "mass_g": [
+   110.0,
+   160.0
+  ],
+  "fragile": true,
+  "max_safe_squeeze_n": [
+   10.0,
+   25.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.45,
+   0.65
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Spherical red fruit susceptible to bruising or skin puncture under moderate gripper pressure.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 10.075,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 63,
+   "width_mm": 60,
+   "length_mm": 60,
+   "shape": "round, domed (sphere/ellipsoid)",
+   "cut_off": false
+  },
+  "image_hash": "025ee4d60d22"
+ },
+ {
+  "idx": 3,
+  "object": "pillar candle",
+  "material": "wax",
+  "mass_g": [
+   250.0,
+   400.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   60.0,
+   150.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Solid cylindrical wax candle easily fits within gripper opening.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 12.427,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 91,
+   "width_mm": 70,
+   "length_mm": 71,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "7074aba2f0bd"
+ },
+ {
+  "idx": 4,
+  "object": "aerosol spray can",
+  "material": "aluminum",
+  "mass_g": [
+   150.0,
+   350.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   50.0,
+   100.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.5,
+   0.8
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cylindrical metal can with a plastic or metal top cap, standard 66 mm diameter.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 17.497,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 141,
+   "width_mm": 66,
+   "length_mm": 53,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "3b67d5a06b77"
+ },
+ {
+  "idx": 5,
+  "object": "soda can",
+  "material": "aluminum",
+  "mass_g": [
+   350.0,
+   400.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   30.0,
+   70.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.5,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cylindrical aluminum beverage can which can dent if squeezed too firmly.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 5.474,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 103,
+   "width_mm": 65,
+   "length_mm": 65,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "87118fbd5b9d"
+ },
+ {
+  "idx": 6,
+  "object": "water bottle",
+  "material": "plastic",
+  "mass_g": [
+   150.0,
+   600.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   80.0,
+   200.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.35,
+   0.6
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cylindrical beverage bottle easily grasped across its 76 mm diameter.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.003,
+  "model_latency_s": 7.637,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 221,
+   "width_mm": 76,
+   "length_mm": 34,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "0197cbf8c5b6"
+ },
+ {
+  "idx": 7,
+  "object": "sticky note cube",
+  "material": "paper",
+  "mass_g": [
+   140.0,
+   200.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   50.0,
+   100.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.45,
+   0.65
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cube-shaped yellow paper pad, easily graspable across opposing flat faces.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 10.749,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 61,
+   "width_mm": 60,
+   "length_mm": 60,
+   "shape": "box (flat faces)",
+   "cut_off": false
+  },
+  "image_hash": "c18accb15c90"
+ },
+ {
+  "idx": 8,
+  "object": "lime",
+  "material": "organic fruit",
+  "mass_g": [
+   60.0,
+   130.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   30.0,
+   70.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.5,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Spherical citrus fruit prone to bruising under excessive gripper force.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 11.713,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 64,
+   "width_mm": 62,
+   "length_mm": 61,
+   "shape": "round, domed (sphere/ellipsoid)",
+   "cut_off": false
+  },
+  "image_hash": "1aed01d425e8"
+ },
+ {
+  "idx": 9,
+  "object": "smartphone",
+  "material": "glass and aluminum",
+  "mass_g": [
+   160.0,
+   230.0
+  ],
+  "fragile": true,
+  "max_safe_squeeze_n": [
+   30.0,
+   70.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Dimensions and flat rectangular profile are characteristic of a modern smartphone.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 10.795,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 10,
+   "width_mm": 72,
+   "length_mm": 136,
+   "shape": "box (flat faces)",
+   "cut_off": true
+  },
+  "image_hash": "aaac1fbbc783"
+ },
+ {
+  "idx": 10,
+  "object": "tin can",
+  "material": "metal",
+  "mass_g": [
+   80.0,
+   450.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   60.0,
+   150.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.5,
+   0.8
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cylindrical food can with standard dimensions, easily grasped across its diameter.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 9.192,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 101,
+   "width_mm": 78,
+   "length_mm": 72,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "704e1ccca3a4"
+ },
+ {
+  "idx": 11,
+  "object": "ceramic mug",
+  "material": "ceramic",
+  "mass_g": [
+   250.0,
+   450.0
+  ],
+  "fragile": true,
+  "max_safe_squeeze_n": [
+   60.0,
+   120.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.5,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Cylindrical ceramic mug with glazed surface; grasp across the outer diameter within gripper limits.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 8.128,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 121,
+   "width_mm": 88,
+   "length_mm": 70,
+   "shape": "round, flat top (cylinder)",
+   "cut_off": true
+  },
+  "image_hash": "44bd1b6846c1"
+ },
+ {
+  "idx": 12,
+  "object": "cardboard box",
+  "material": "cardboard",
+  "mass_g": [
+   200.0,
+   600.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   25.0,
+   60.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.7
+  ],
+  "graspable_by_parallel_jaw_14cm": false,
+  "notes": "All visible dimensions exceed the maximum gripper opening of 136 mm.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 7.231,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 141,
+   "width_mm": 180,
+   "length_mm": 89,
+   "shape": "box (flat faces)",
+   "cut_off": true
+  },
+  "image_hash": "091a571ae2fd"
+ },
+ {
+  "idx": 13,
+  "object": "book",
+  "material": "paper / cardboard",
+  "mass_g": [
+   300.0,
+   650.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   60.0,
+   150.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.4,
+   0.6
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "A thick blue book whose 120 mm width fits within the 136 mm gripper opening.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 9.109,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 41,
+   "width_mm": 120,
+   "length_mm": 151,
+   "shape": "box (flat faces)",
+   "cut_off": true
+  },
+  "image_hash": "2576f2875124"
+ },
+ {
+  "idx": 14,
+  "object": "turnip",
+  "material": "organic / vegetable tissue",
+  "mass_g": [
+   150.0,
+   300.0
+  ],
+  "fragile": false,
+  "max_safe_squeeze_n": [
+   50.0,
+   100.0
+  ],
+  "surface": "dry",
+  "friction_guess": [
+   0.45,
+   0.65
+  ],
+  "graspable_by_parallel_jaw_14cm": true,
+  "notes": "Purple-top turnip represented as a two-tone sphere, firm enough to withstand moderate grip force.",
+  "invalid_fields": [],
+  "source": "gemini",
+  "model": "gemini-3.8-flash",
+  "latency_s": 0.002,
+  "model_latency_s": 13.213,
+  "cached": true,
+  "fallback": null,
+  "depth": {
+   "found": true,
+   "height_mm": 89,
+   "width_mm": 84,
+   "length_mm": 83,
+   "shape": "round, domed (sphere/ellipsoid)",
+   "cut_off": false
+  },
+  "image_hash": "9059e7bc7e9d"
+ }
+]

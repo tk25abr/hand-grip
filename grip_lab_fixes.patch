@@ -1,0 +1,82 @@
+diff -ru a/grip_lab/policies.py b/grip_lab/policies.py
+--- a/policies.py	2026-11-08 10:02:12.473562799 +0000
++++ b/policies.py	2026-11-08 10:18:31.265496573 +0000
+@@ -211,19 +211,33 @@
+                 self.g0, self.f0 = g, f            # being squeezed -> restart the stiffness reference here
+                 return self._f(min(self.F + PROBE_RATE * DT, probe_max))
+             soft = dg >= 0.6 and dF / dg < SOFT_K
+-            if soft or dF >= 1.5 or (self.F >= probe_max - 1e-9 and len(self.hist) > 25):
++            timed_out = self.F >= probe_max - 1e-9 and len(self.hist) > 25
++            if timed_out and dF < 0.5:          # pads never loaded up: no proof it is firm -> treat as soft
++                soft = True
++            if soft or dF >= 1.5 or timed_out:
+                 self.soft = soft
+                 self.k = dF / max(dg, 0.05)
+                 self.felt["stiffness"] = self.k
+                 self.felt["soft"] = soft
+                 self.cstate = "ramp"
+                 if soft:
+-                    known = self.guess["source"] != "depth-only"
++                    # trust the vision cap only if vision already expected something delicate;
++                    # vision said "firm" but the fingers feel it give -> touch wins, material unknown
++                    known = self.guess["source"] != "depth-only" and self.fragile
+                     base = self.safe_lo if known else min(self.safe_lo, SOFT_UNKNOWN_N)
+                     self.cap = min(self.cap, 0.6 * base)
+                     msg = (f"soft: {self.k:.1f} N/mm (gives {dg:.1f} mm for +{dF:.1f} N) -> cap "
+                            f"0.6 x {base:.0f} = {self.cap:.1f} N"
+-                           + ("" if known else " (material unknown: fruit? paper?)"))
++                           + ("" if known else " (touch overrides vision: material unknown, fruit? paper?)"))
++                    if not known and self.guess["source"] != "depth-only":
++                        # vision was wrong about the material, so its mass guess is not trusted either:
++                        # start from what the depth size alone allows (light foam/paper .. dense)
++                        pr = vlm.depth_prior(self.percept)
++                        m_lo, m_hi = (v / 1000 for v in pr["mass_g"])
++                        self.m_guess = (m_lo, m_hi)
++                        self.F_micro = float(np.clip(SF * math.sqrt(m_lo * m_hi) * G / sum(pr["friction_guess"]),
++                                                     F_MIN, self.cap))
++                        msg += f"; vision's mass guess dropped -> start {self.F_micro:.1f} N"
+                 else:
+                     msg = f"firm: gives only {max(dg, 0):.2f} mm for +{dF:.1f} N (> {dF / max(dg, 0.2):.0f} N/mm)"
+                 self.target = float(np.clip(self.F_micro, F_MIN, self.cap))
+diff -ru a/grip_lab/run.py b/grip_lab/run.py
+--- a/run.py	2026-11-08 10:02:12.489995043 +0000
++++ b/run.py	2026-11-08 10:18:31.268437858 +0000
+@@ -135,12 +135,14 @@
+ 
+ 
+ def monte_carlo(args):
+-    from multiprocessing import Pool
++    from multiprocessing import get_context
+     t0 = time.time()
+     if args.policy == "smart":
+         warm_cache(args)
+     jobs = [(args, 1000 + i) for i in range(args.runs)]
+-    with Pool(max(1, os.cpu_count() or 1)) as pool:
++    # spawn, not fork: the parent may already hold an OpenGL/EGL context (camera rendering in
++    # warm_cache), and forked children deadlock on it on Linux
++    with get_context("spawn").Pool(max(1, os.cpu_count() or 1)) as pool:
+         runs = []
+         for i, r in enumerate(pool.imap_unordered(_one_run, jobs), 1):
+             runs.append(r)
+diff -ru a/grip_lab/vlm.py b/grip_lab/vlm.py
+--- a/vlm.py	2026-11-08 10:02:12.484512483 +0000
++++ b/vlm.py	2026-11-08 10:18:31.267007996 +0000
+@@ -300,14 +300,14 @@
+     sources.append(("local gemma", os.environ.get("GEMMA_MODEL", "gemma3:4b"), ask_gemma,
+                     float(os.environ.get("GEMMA_TIMEOUT", 45))))
+     for source, model, ask, timeout in sources:
+-        if source == "gemini" and not os.environ.get("GEMINI_API_KEY"):
++        t0 = time.time()
++        hit = cache.find(source, model, thumb) if use_cache else None   # cached answer works offline too
++        if hit is None and source == "gemini" and not os.environ.get("GEMINI_API_KEY"):
+             skipped.append("gemini: no GEMINI_API_KEY")
+             continue
+-        if source == "local gemma" and not gemma_url():
++        if hit is None and source == "local gemma" and not gemma_url():
+             skipped.append("gemma: no GEMMA_URL")
+             continue
+-        t0 = time.time()
+-        hit = cache.find(source, model, thumb) if use_cache else None
+         if hit is not None:
+             g = validate(hit["parsed"], prior)
+             return dict(g, source=source, model=model, latency_s=round(time.time() - t0, 3),
